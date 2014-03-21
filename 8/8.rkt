@@ -103,53 +103,41 @@
 ;; Type Checking for CBOO
 
 (define-extended-language CBOO-ctx CBOO
-  (Γ (var-type ...))
-  (var-type (x t))
-  (t ....
-     (((field t) ...)
-      ((mname ((param t) ...)) ...))))
+  (Γ [(var-type ...)])
+  (visited ((cname mname) ...))
+  (var-type (x t)))
 
 (define-judgment-form CBOO-ctx
   #:contract (typed p)
   #:mode (typed I)
-  [ (typed-ctx () p)
-   ------------------ typed-p
+  [(where (c ... e) p)
+   (typed/classes (c ...))
+   (typed/e (c ...) () () e t)
+   -------------------- typed-p
    (typed p)])
 
 (define-judgment-form CBOO-ctx
-  #:contract (typed-ctx Γ p)
-  #:mode (typed-ctx I I)
-  [(where (c ... e) p)
-   (where Γ_p (extend Γ (classes->Γ (c ...))))
-   (valid-c Γ_p c) ...
-   (typed-e Γ_p e t)
-   -------------- prog
-    (typed-ctx Γ p)])
+  #:contract (typed/classes (c ...))
+  #:mode (typed/classes I)
+  [(typed/class (c ...) c) ...
+   --------------------
+   (typed/classes (c ...))])
 
+(define-judgment-form CBOO-ctx
+  #:contract (typed/class (c ...) c)
+  #:mode (typed/class I I)
+  [(where (class cname ((t field) ...) m ...) c_active)
+   --------------------
+   (typed/class (c ...) c_active)])
 
-(define-metafunction CBOO-ctx
-  extend : Γ Γ -> Γ
-  [(extend (var-type_1 ...) (var-type_2 ...)) (var-type_2 ... var-type_1 ...)])
-
-(define-metafunction CBOO-ctx
-  classes->Γ : (c ...) -> Γ
-  [(classes->Γ ()) ()]
-  [(classes->Γ (c_0 c_1 ...))
-   ((cname t_c) var-type ...)
-   (where (class cname 
-            ((t_f field) ...) 
-            (def mname ((t_p param) ...) e)) c_0)
-   (where (var-type ...) (classes->Γ (c_1 ...)))
-   (where t_c (((field t_f) ...)
-               ((mname ((param t_p) ...)) ...)))])
-
-
-
-
-
+(define-judgment-form CBOO-ctx
+  #:contract (typed/e (c ...) Γ visited e t)
+  #:mode (typed/e I I I I O)
+  [(where t Object)
+   --------------------
+   (typed/e (c ...) Γ visited e t)])
 
 ;; -----------------------------------------------------------------------------
-
 
 (define p0
   (term
@@ -158,12 +146,12 @@
       (def w() (get this width))
       (def h() (get this height))
       (def area() 
-        (let ((Object w (send this w))
-              (Object h (get this height)))
-          (* w h)))) 
+	   (let ((Object w (send this w))
+		 (Object h (get this height)))
+	     (* w h)))) 
     (class start-here ()
       (def main()
-        (send (new rectangle 200 300) area)))
+	   (send (new rectangle 200 300) area)))
     ;; initial expression 
     (send (new start-here) main))))
 
@@ -325,12 +313,12 @@
   [(subst-vars any) any])
 
 (module+ test
+  #;
   (define-syntax-rule 
     (=-up-to-α (x e) ... e_body e_expected)
     (test-equal (term (subst-n (x e) ... e_body)) (term e_expected) #:equiv e-=α))
   
   ;; if you are not running the cutting edge drracket, use this instead: 
-  #;
   (define-syntax-rule 
     (=-up-to-α (x e) ... e_body e_expected)
     (test-equal  (e-=α (term (subst-n (x e) ... e_body)) (term e_expected)) #t))
@@ -541,12 +529,12 @@
         *)))
 
 (module+ test
+  #;
   (define-syntax-rule 
     (runs-well p0 v)
     (test-equal (term (evaluate ,p0)) v #:equiv e-=α))
   
   ;; if you are not running the cutting edge drracket, use this instead: 
-  #;  
   (define-syntax-rule 
     (runs-well p0 v)
     (test-equal (e-=α (term (evaluate ,p0)) v) #t))
