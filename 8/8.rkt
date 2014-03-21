@@ -24,17 +24,16 @@
      (class cname ((t field) ...) m ...))
   (m ::= ;; a method expression
      (def mname ((t param) ...) e))
-  (e ::=
+  (e ::= 
      x
-     (get field x)
-     (get field this)
-     this
      n
      (+ e e)
      (* e e)
+     this
+     (let ((t x e) ...) e) ;; ** like a block in Java, but 'parallel' scope
+     (get e field)         ;; ** syntax improvement
      (new cname e ...)
-     (send e mname e ...)
-     (let ((t x e) ...) e e ...))
+     (send e mname e ...))
   (n ::=
      number)
   (t ::= 
@@ -47,16 +46,85 @@
   (x variable-not-otherwise-mentioned))
 
 ;; examples
+;; -----------------------------------------------------------------------------
+;; Examples with Run-time errors
+
+(define bad1
+  (term 
+   ((new non-existant-class))))
+
+(define bad2
+  (term
+   ((class my-class ())
+    (let ((Object my-object (new my-class)))
+      (send my-object no-method)))))
+
+(define bad3
+  (term
+   ((class my-class ())
+    (let ((Object my-object (new my-class)))
+      (get my-object no-field)))))
+
+(define bad4
+  (term
+   (this)))
+
+(define bad5
+  (term
+   ((class my-class ())
+    (* 5 (new my-class)))))
+
+(define bad-big
+  (term
+   ((class my-class 
+      ((Object x) (Object y))
+      (def add-fields () (+ (get this x) (get this y))))
+    (let ((Object o1 (new my-class 0 0))
+          (Object o2 (new my-class 3 4))
+          (Object o3 (new my-class o1 o2)))
+      (send o3 add-fields)))))
+      
+
+
+(module+ test
+  (test-equal (redex-match? CBOO p bad1) #t)
+  (test-equal (redex-match? CBOO p bad2) #t)
+  (test-equal (redex-match? CBOO p bad3) #t)
+  (test-equal (redex-match? CBOO p bad4) #t)
+  (test-equal (redex-match? CBOO p bad5) #t)
+  (test-equal (redex-match? CBOO p bad-big) #t))
+
+
+
+
+;; -----------------------------------------------------------------------------
+
+
+(define p0
+  (term
+   (;; class definitions: 
+    (class rectangle ((Object width) (Object height))
+      (def w() (get this width))
+      (def h() (get this height))
+      (def area() 
+        (let ((Object w (send this w))
+              (Object h (get this height)))
+          (* w h)))) 
+    (class start-here ()
+      (def main()
+        (send (new rectangle 200 300) area)))
+    ;; initial expression 
+    (send (new start-here) main))))
 
 (define p1
   (term
    (;; class definitions: 
     (class rectangle ((Object width) (Object height))
-      (def w() (get width this))
-      (def h() (get height this))
+      (def w() (get this width))
+      (def h() (get this height))
       (def area() 
         (let ((Object w (send this w))
-              (Object h (get height this)))
+              (Object h (get this height)))
           (* w h)))) 
     (class start-here ()
       (def main()
@@ -71,50 +139,23 @@
         this))
     (send (new main 1) main 2))))
 
-;; erroneous programs 
-(define e1-new-bad-class
+(define bug1
   (term 
-   ((send (new Main) m))))
-
-(define e2-object-without-class
-  (term 
-   ((let ((Object x (new Main))) 
-      (send x m)))))
-
-(define e3-class-without-method
-  (term 
-   ((class Main ()
-      (def k()
-        42))
-    (let ((Object x (new Main))) 
-      (send x m)))))
-
-(define e4-bad-*
-  (term 
-   ((class Main()
-      (def m()
-        (send this k this))
-      (def k((Object x))
-        (* x 42)))
-    (send (new Main) m))))
-
-(define e5-bad-+
-  (term 
-   ((class Main()
-      (def m()
-        (send this k this))
-      (def k((Object x))
-        (+ x 42)))
-    (send (new Main) m))))
+   ((class bug ((Object a)))
+    (let ()
+      (let ((Object x (new bug 1))
+            (Object y (new bug 2)))
+        (+ (get x a) (get y a)))))))
 
 (module+ test
-  (test-equal (redex-match? CBOO p p1) #t)
-  (test-equal (redex-match? CBOO p p2) #t)
-  (test-equal (redex-match? CBOO p e1-new-bad-class) #t)
-  (test-equal (redex-match? CBOO p e2-object-without-class) #t)
-  (test-equal (redex-match? CBOO p e3-class-without-method) #t)
-  (test-equal (redex-match? CBOO p e4-bad-*) #t)
-  (test-equal (redex-match? CBOO p e5-bad-+) #t))
+  (define-syntax-rule
+    (grammatically-correct p0)
+    (test-equal (redex-match? CBOO p p0) #t))
+  
+  (grammatically-correct p0) 
+  (grammatically-correct p1) 
+  (grammatically-correct p2)
+  (grammatically-correct bug1))
 
 ;; α equivalence 
 
@@ -141,8 +182,11 @@
     [(sd (+ e_1 e_2) any) (+ (sd e_1 any) (sd e_2 any))]
     [(sd (* e_1 e_2) any) (* (sd e_1 any) (sd e_2 any))]
     [(sd (send e_t mname e ...) any) (send (sd e_t any) mname (sd e any) ...)]
-    [(sd (let ((t x e) ...) e_b ...) (x_1 ...))
-     (let () (sd e (x ... x_1 ...)) ... (sd e_b (x ... x_1 ...)) ...)])
+    [(sd (let ((t x e) ...) e_b) (x_1 ...))
+     ;; eliminate binding occurrence of variables because their names 
+     ;; might differ and ignoring this difference is the whole point 
+     ;; of alpha equivalence; ALSO note parallel binding 
+     (let ((t ^ (sd e (x_1 ...))) ...) (sd e_b (x ... x_1 ...)))])
   ;; --- now convert to sd and compare with plain equal --- 
   (equal? (term (sd ,e1 ())) (term (sd ,e2 ()))))
 
@@ -198,24 +242,16 @@
 ;; without messing up the binding structure 
 (define-metafunction CBOO
   subst : x any any -> any
-  ;; 1. x_1 bound, so don't continue in let's body 
-  [(subst x_1 any_1 
-          (let ((t_2 x_2 any_2) ... (t_1 x_1 any_*) (t_3 x_3 any_3) ...)
-            e ...))
-   (let ((t_2 x_2 (subst x_1 any_1 any_2))
-         ... 
-         (t_1 x_1 (subst x_1 any_1 any_*))
-         (t_3 x_3 (subst x_1 any_1 any_3))
-         ...) 
-     e ...)]
+  ;; 1. x_1 bound, so don't continue in let's body but subst in surrounding bindings
+  [(subst x_1 any_1 (let ((t_2 x_2 any_2) ... (t_1 x_1 any_*) (t_3 x_3 any_3) ...) e)) 
+   (let ((t_2 x_2 (subst x_1 any_1 any_2)) ... (t_1 x_1 any_*) (t_3 x_3 (subst x_1 any_1 any_3)) ...)
+     e)]
   ;; 2. general purpose capture avoiding case
-  [(subst x_1 any_1 (let ((t_2 x_2 any_2) ... ) any_b ...))
+  [(subst x_1 any_1 (let ((t_2 x_2 any_2) ... ) any_b))
    (let ((t_2 x_new (subst x_1 any_1 (subst-vars (x_2 x_new) ... any_2))) ...)
-     (subst x_1 any_1 (subst-vars (x_2 x_new) ... any_b)) ...)
+     (subst x_1 any_1 (subst-vars (x_2 x_new) ... any_b)))
    (where (x_new ...)
-          ,(variables-not-in
-            (term (x_1 any_1 any_2 ... any_b ...)) 
-            (term (x_2 ...))))]
+          ,(variables-not-in (term (x_1 any_1 any_2 ... any_b)) (term (x_2 ...))))]
   ;; 3. replace x_1 with e_1
   [(subst x_1 any_1 x_1) any_1]
   ;; 4. x_1 and x_2 are different, so don't replace
@@ -238,35 +274,36 @@
   [(subst-vars any) any])
 
 (module+ test
-  (test-equal (term (subst-n (x 1) (* x 2))) (term (* 1 2)) #:equiv e-=α)
+  (define-syntax-rule 
+    (=-up-to-α (x e) ... e_body e_expected)
+    (test-equal (term (subst-n (x e) ... e_body)) (term e_expected) #:equiv e-=α))
   
-  (test-equal (term (subst-n (x 1) (let ((Object y 3)) (* x 2))))
-              (term (let ((Object y 3)) (* 1 2)))
-              #:equiv e-=α)
+  ;; if you are not running the cutting edge drracket, use this instead: 
+  #;
+  (define-syntax-rule 
+    (=-up-to-α (x e) ... e_body e_expected)
+    (test-equal  (e-=α (term (subst-n (x e) ... e_body)) (term e_expected)) #t))
   
-  (test-equal
-   (term (subst-n (x 1) (let ((Object y (let ((Object x 4)) x))) (* x 2))))
-   (term (let ((Object y (let ((Object x 4)) x))) (* 1 2)))
-   #:equiv e-=α)
+  (=-up-to-α (x 1) (* x 2) 
+             (* 1 2))
   
-  (test-equal
-   (term (subst-n (x 1) (let ((Object y (let ((Object w 4)) x))) (* x 2))))
-   (term (let ((Object y (let ((Object w 4)) 1))) (* 1 2)))
-   #:equiv e-=α)
+  (=-up-to-α (x 1) (let ((Object y 3)) (* x 2)) 
+             (let ((Object y 3)) (* 1 2)))
   
-  (test-equal 
-   (term 
-    (subst-n (x 1) (let ((Object y (let ((Object w 4)) (+ x w)))) (* x 2))))
-   (term (let ((Object y (let ((Object w 4)) (+ 1 w)))) (* 1 2)))
-   #:equiv e-=α))
+  (=-up-to-α (x 1) (let ((Object y (let ((Object x 4)) x))) (* x 2)) 
+             (let ((Object y (let ((Object x 4)) x))) (* 1 2)))
+  
+  (=-up-to-α (x 1) (let ((Object y (let ((Object w 4)) x))) (* x 2))
+             (let ((Object y (let ((Object w 4)) 1))) (* 1 2))))
 
-;; -----------------------------------------------------------------------------
+;; ---------------------------------------------------------------------------------------------------
 ;; SEMANTICS 
 
 ;; extend the language with run-time values and evaluation contexts 
 (define-extended-language CBOO-dynamic CBOO 
   (E ::= ;; expression contexts 
      hole 
+     (get E field)
      (+ v ... E e ...)
      (* v ... E e ...)
      (new cname v ... E e ...)
@@ -276,7 +313,11 @@
   (v ::= ;; values 
      this
      n
-     x
+     x)
+  (o ::= 
+     v
+     ;; BUG: bug1 revealed that (new cname v ...) cannot be a value.
+     ;; Otherwise the reduction relation is neither standard nor correct. 
      (new cname v ...)))
 
 ;; (evaluate p) reduces program p to canonical form and unloads it as a value
@@ -302,9 +343,65 @@
 ;; (unload p) turns a canonical let into a plain value by substituting
 ;; the bound values for the bound variables in the body
 (define-metafunction CBOO-dynamic
-  unload : p -> v or "run-time error"
-  [(unload (c ... (let ((t x v) ...) v_p))) (subst-n (x v) ... v_p)]
+  unload : p -> (let ((t x o) ...) v) or v or "run-time error"
+  [(unload (c ... (let ((t x o) ...) v_p))) 
+   (let ((t_f x_f o_f) any_1 ...) v_p)
+   (where ((t_f x_f o_f) any_1 ...) (free ((t x o) ...) v_p))]
+  [(unload (c ... (let ((t x o) ...) v_p))) 
+   v_p
+   (where () (free ((t x o) ...) v_p))]
+  ;; ** broadened unload to take care of stuck states 
   [(unload p) "run-time error"])
+
+;; (free ((t x o) ...) v) collects the (t x o) ... from the 
+;; declarations whose declared variable occurs free in v
+(define-metafunction CBOO-dynamic 
+  free : ((t x o) ...) v -> ((t x o) ...) or "run-time error"
+  [(free any_1 n) ()]
+  [(free ((t_1 x_1 o_1) ... (t x o) (t_2 x_2 o_2) ...) x) ((t x o))]
+  [(free any_1 x) "run-time error"]
+  [(free any_1 this) ()]
+  [(free any_1 (get e field)) (free any_1 e)]
+  [(free any_1 (send e mname e_1 ...)) (set-union* (free any_1 e) (free any_1 e_1) ...)]
+  [(free any_1 (new cname e_1 ...)) (set-union* (free any_1 e_1) ...)]
+  [(free any_1 (+ e e_1)) (set-union* (free any_1 e) (free any_1 e_1))]
+  [(free any_1 (* e e_1)) (set-union* (free any_1 e) (free any_1 e_1))]
+  [(free any_1 (let ((t x e_x) ...) e)) 
+   (set-union* (set-minus (free any_1 e) x ...) (free any_1 e_x) ...)])
+
+;; (set-minus (any_1 ...] any_2 ...) removes the any_2s from the (any_1 ...) list
+(module+ test
+  (test-equal (term (set-minus ((Object x 1) (Object y 2)) z x)) (term ((Object y 2)))))
+(define-metafunction CBOO-dynamic 
+  set-minus : ((t x o) ...) x ... -> ((t x o) ...)
+  [(set-minus any_1) any_1]
+  [(set-minus ((t_1 x_1 o_1) ... (t x o) (t_2 x_2 o_2) ...) x x_r ...) 
+   (set-minus ((t_1 x_1 o_1) ... (t_2 x_2 o_2) ...) x_r ...)]
+  [(set-minus any_1 x x_r ...) (set-minus any_1 x_r ...)])
+
+;; (set-union* ((t x o) ...) ...) produces the n-ary set-union of the declarations 
+(module+ test
+  (test-equal 
+   (term (set-union* ((Object x 1) (Object y 2)) 
+                     ((Object z 3) (Object x 1))
+                     ((Object w 4))))
+   ;; this is a cheat: we are using lists for sets, order matters
+   (term ((Object w 4) (Object z 3) (Object x 1) (Object y 2)))))
+(define-metafunction CBOO-dynamic 
+  set-union* : ((t x o) ...) ... -> ((t x o) ...)
+  [(set-union* any_1) any_1]
+  [(set-union* any_1 any_2 any_3 ...) (set-union* (set-union any_1 any_2) any_3 ...)])
+
+;; (set-union ((t x o) ...) ...) produces the biary set-union of the declarations 
+(define-metafunction CBOO-dynamic 
+  set-union : ((t x o) ...) ((t x o) ...) -> ((t x o) ...)
+  [(set-union any_1 ()) any_1]
+  [(set-union any_1 ((t x o) (t_r x_r o_r) ...))
+   (set-union any_1 ((t_r x_r o_r) ...))
+   (side-condition (member (term (t x o)) (term any_1)))]
+  [(set-union any_1 ((t x o) (t_r x_r o_r) ...))
+   ((t x o) any_3 ...)
+   (where (any_3 ...) (set-union any_1 ((t_r x_r o_r) ...)))])
 
 ;; p_1 ->oo p_2 means program p_1 reduces to p_2 (emphasis: program)
 ;; notes: 
@@ -331,13 +428,13 @@
    (--> (c_1 ... 
          (class x_c ((t field) ..._c) m ...) 
          c_2 ... 
-         (let ((t_1 x_1 v_1) ...) (in-hole E (new x_c v ..._c))))
+         (let ((t_1 x_1 o_1) ...) (in-hole E (new x_c v ..._c))))
         ;; --- reduce to ---
         (c_1 ... 
          (class x_c ((t field) ...) m ...) 
          c_2 ... 
          (let ((Object x_new (new x_c v ...))
-               (t_1 x_1 v_1) ...) 
+               (t_1 x_1 o_1) ...) 
            (in-hole E x_new)))
         (where x_new ,(variable-not-in (term (x_1 ... E)) (term l)))
         new)
@@ -345,63 +442,71 @@
          (class x_c ((t_1 field_1) ..._c (t field) (t_2 field_2) ...) m ...)
          c_2 ... 
          (let 
-             ((t_3 x_3 v_3) ... 
+             ((t_3 x_3 o_3) ... 
               (t_new x_new (new x_c v_* ..._c v v_+ ...))
-              (t_4 x_4 v_4) ...) 
-           (in-hole E (get field x_new))))
+              (t_4 x_4 o_4) ...) 
+           (in-hole E (get x_new field))))
         ;; --- reduce to ---
         (c_1 ... 
          (class x_c ((t_1 field_1) ... (t field) (t_2 field_2) ...) m ...)
          c_2 ... 
          (let
-             ((t_3 x_3 v_3) ... 
+             ((t_3 x_3 o_3) ... 
               (t_new x_new (new x_c v_* ... v v_+ ...))
-              (t_4 x_4 v_4) ...) 
+              (t_4 x_4 o_4) ...) 
            (in-hole E v)))
         get)
    (--> (c_1 ... 
          (class cname ((t field) ...) 
            m_1 ... (def mname ((t_p x_p) ..._c) e) m_2 ...)
          c_2 ...
-         (let ((t_1 x_1 v_1) ...
+         (let ((t_1 x_1 o_1) ...
                (t_x x (new cname v_x ...))
-               (t_2 x_2 v_2) ...)
+               (t_2 x_2 o_2) ...)
            (in-hole E (send x mname v ..._c))))
         ;; --- reduce to ---
         (c_1 ... 
          (class cname ((t field) ...) 
            m_1 ... (def mname ((t_p x_p) ...) e) m_2 ...)
          c_2 ...
-         (let ((t_1 x_1 v_1) ... 
+         (let ((t_1 x_1 o_1) ... 
                (t_x x (new cname v_x ...))
-               (t_2 x_2 v_2) ...)
+               (t_2 x_2 o_2) ...)
            (in-hole E (subst-vars (this x) (subst-n (x_p v) ... e)))))
         send)
-   (--> (c_1 ... (let ((t_1 x_1 v_1) ...) (in-hole E (let ((t x v) ...) e))))
+   (--> (c_1 ... (let ((t_1 x_1 o_1) ...) (in-hole E (let ((t x v) ...) e))))
         ;; --- reduce to ---
-        (c_1 ... (let ((t_1 x_1 v_1) ...) (in-hole E (subst-n (x v) ... e))))
+        (c_1 ... (let ((t_1 x_1 o_1) ...) (in-hole E (subst-n (x v) ... e))))
         let)
-   (--> (c_1 ... (let ((t_1 x_1 v_1) ...) (in-hole E (+ n_1 n_2))))
+   (--> (c_1 ... (let ((t_1 x_1 o_1) ...) (in-hole E (+ n_1 n_2))))
         ;; --- reduce to ---
-        (c_1 ... (let ((t_1 x_1 v_1) ...) (in-hole E n)))
+        (c_1 ... (let ((t_1 x_1 o_1) ...) (in-hole E n)))
         (where n ,(+ (term n_1) (term n_2)))
         +)
-   (--> (c_1 ... (let ((t_1 x_1 v_1) ...) (in-hole E (* n_1 n_2))))
+   (--> (c_1 ... (let ((t_1 x_1 o_1) ...) (in-hole E (* n_1 n_2))))
         ;; --- reduce to ---
-        (c_1 ... (let ((t_1 x_1 v_1) ...) (in-hole E n)))
+        (c_1 ... (let ((t_1 x_1 o_1) ...) (in-hole E n)))
         (where n ,(* (term n_1) (term n_2)))
         *)))
 
 (module+ test
-  (test-equal (term (evaluate ,p1)) 60000)
+  (define-syntax-rule 
+    (runs-well p0 v)
+    (test-equal (term (evaluate ,p0)) v #:equiv e-=α))
   
-  ;; is it weird to have  'free' class names in results?
-  (test-equal (term (evaluate ,p2)) (term (new main 1)))
+  ;; if you are not running the cutting edge drracket, use this instead: 
+  #;  
+  (define-syntax-rule 
+    (runs-well p0 v)
+    (test-equal (e-=α (term (evaluate ,p0)) v) #t))
   
-  (test-equal (term (evaluate ,e1-new-bad-class)) "run-time error")
-  (test-equal (term (evaluate ,e2-object-without-class)) "run-time error")
-  (test-equal (term (evaluate ,e3-class-without-method)) "run-time error")
-  (test-equal (term (evaluate ,e4-bad-*)) "run-time error")
-  (test-equal (term (evaluate ,e5-bad-+)) "run-time error")
+  (runs-well p0 60000)
+  (runs-well p1 60000)
+  (runs-well p2 (term (let ((Object l (new main 1))) l)))
+  (runs-well bug1 3)
+  
+  (define-syntax-rule
+    (gets-stuck p_e)
+    (test-equal (term (evaluate ,p_e)) "run-time error"))
   
   (test-results))
