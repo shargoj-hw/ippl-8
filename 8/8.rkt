@@ -37,7 +37,9 @@
   (n ::=
      number)
   (t ::= 
-     Object)
+     Object
+     Number
+     cname)
   ;; variable names, hinting at their role 
   (cname x)
   (mname x)
@@ -65,6 +67,10 @@
     (let ((Object my-object (new my-class)))
       (get my-object no-field)))))
 
+
+;; This is an error that should be caught by a type checker
+;; but the current evaluate function does not signal a run-time
+;; error
 (define bad4
   (term
    (this)))
@@ -93,6 +99,51 @@
   (test-equal (redex-match? CBOO p bad4) #t)
   (test-equal (redex-match? CBOO p bad5) #t)
   (test-equal (redex-match? CBOO p bad-big) #t))
+;; -----------------------------------------------------------------------------
+;; Type Checking for CBOO
+
+(define-extended-language CBOO-ctx CBOO
+  (Γ (var-type ...))
+  (var-type (x t))
+  (t ....
+     (((field t) ...)
+      ((mname ((param t) ...)) ...))))
+
+(define-judgment-form CBOO-ctx
+  #:contract (typed p)
+  #:mode (typed I)
+  [ (typed-ctx () p)
+   ------------------ typed-p
+   (typed p)])
+
+(define-judgment-form CBOO-ctx
+  #:contract (typed-ctx Γ p)
+  #:mode (typed-ctx I I)
+  [(where (c ... e) p)
+   (where Γ_p (extend Γ (classes->Γ (c ...))))
+   (valid-c Γ_p c) ...
+   (typed-e Γ_p e t)
+   -------------- prog
+    (typed-ctx Γ p)])
+
+
+(define-metafunction CBOO-ctx
+  extend : Γ Γ -> Γ
+  [(extend (var-type_1 ...) (var-type_2 ...)) (var-type_2 ... var-type_1 ...)])
+
+(define-metafunction CBOO-ctx
+  classes->Γ : (c ...) -> Γ
+  [(classes->Γ ()) ()]
+  [(classes->Γ (c_0 c_1 ...))
+   ((cname t_c) var-type ...)
+   (where (class cname 
+            ((t_f field) ...) 
+            (def mname ((t_p param) ...) e)) c_0)
+   (where (var-type ...) (classes->Γ (c_1 ...)))
+   (where t_c (((field t_f) ...)
+               ((mname ((param t_p) ...)) ...)))])
+
+
 
 
 
