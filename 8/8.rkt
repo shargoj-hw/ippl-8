@@ -105,7 +105,7 @@
 (define-extended-language CBOO-ctx CBOO
   (Γ [(var-type ...)])
   (visited ((cname mname) ...))
-  (var-type (x t)))
+  (var-type (t x)))
 
 (define-judgment-form CBOO-ctx
   #:contract (typed p)
@@ -127,15 +127,71 @@
   #:contract (typed/class (c ...) c)
   #:mode (typed/class I I)
   [(where (class cname ((t field) ...) m ...) c_active)
+   (typed/method (c ...) cname m) ...
    --------------------
    (typed/class (c ...) c_active)])
 
 (define-judgment-form CBOO-ctx
+  #:contract (typed/method (c ...) cname m)
+  #:mode (typed/method I I I)
+  [(where (def mname ((t param) ...) e) m)
+   (typed/e (c ...) ((this cname) (t param) ...) ((cname mname)) e t_e)
+   --------------------
+   (typed/method (c ...) cname m)])
+
+(define-judgment-form CBOO-ctx
   #:contract (typed/e (c ...) Γ visited e t)
   #:mode (typed/e I I I I O)
-  [(where t Object)
+  [(where (var-type_a ... (x t) var-type_b ...) Γ)
+   (side-condition ,(not (member (term x) (term (var-type_a ...)))))
    --------------------
-   (typed/e (c ...) Γ visited e t)])
+   (typed/e (c ...) Γ visited x t)]
+  [--------------------
+   (typed/e (c ...) Γ visited n Number)]
+  [(typed/e (c ...) Γ visited e_l Number)
+   (typed/e (c ...) Γ visited e_r Number)
+   --------------------
+   (typed/e (c ...) Γ visited (+ e_l e_r) Number)]  
+  [(typed/e (c ...) Γ visited e_l Number)
+   (typed/e (c ...) Γ visited e_r Number)
+   --------------------
+   (typed/e (c ...) Γ visited (* e_l e_r) Number)]
+  [(where (var-type_a ... (this t) var-type_b ...) Γ)
+   (side-condition ,(not (member (term this) (term (var-type_a ...)))))
+   --------------------
+   (typed/e (c ...) Γ visited this t)]
+  [(where (var-type ...) Γ)
+   (where Γ_2 ((t_let x) ... var-type ...))
+   (typed/e (c ...) Γ visited e_let t_let) ...
+   (typed/e (c ...) Γ_2 visited e t)
+   --------------------
+   (typed/e (c ...) Γ visited (let ((t_let x e_let) ...) e) t)]
+  [(typed/e (c ...) Γ visited e cname)
+   (where (c_1 ... (class cname ((t_field x) ..._n) m ...) c_2 ...) (c ...))
+   (where (any_1 ... (t x_field) any_2 ...) ((t_field x) ...))
+   --------------------
+   (typed/e (c ...) Γ visited (get e x_field) t)]
+  [(where (c_1 ... (class cname ((t_field x) ..._n) m ...) c_2 ...) (c ...))
+   (typed/e (c ...) Γ visited e t_field) ...
+   --------------------
+   (typed/e (c ...) Γ visited (new cname e ..._n) cname)]
+  [(where ((cname_visited mname_visited) ...) visited)
+   (where (c_1 
+	   ... 
+	   (class cname (any ...) 
+	     m_1 ... 
+	     (def mname ((t_param param) ..._n) e_m)
+	     m_2 ...)
+	   c_2 ...)
+	  (c ...))
+   (typed/e (c ...) Γ visited e_to cname)
+   (typed/e (c ...) Γ visited e_param t_param) ...
+   (side-condition ,(not (member (term (cname mname)) (term visited))))
+   (where (var-type ...) Γ)
+   (where Γ_2 ((this cname) (t_param param) ... var-type ...))
+   (typed/e (c ...) Γ ((cname mname) (cname_visited mname_visited) ...) e_m t)
+   --------------------
+   (typed/e (c ...) Γ visited (send e_to mname e_param ..._n) t)])
 
 ;; -----------------------------------------------------------------------------
 
