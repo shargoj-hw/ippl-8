@@ -89,8 +89,6 @@
           (Object o2 (new my-class 3 4))
           (Object o3 (new my-class o1 o2)))
       (send o3 add-fields)))))
-      
-
 
 (module+ test
   (test-equal (redex-match? CBOO p bad1) #t)
@@ -103,9 +101,12 @@
 ;; Type Checking for CBOO
 
 (define-extended-language CBOO-ctx CBOO
-  (Γ [(var-type ...)])
-  (visited ((cname mname) ...))
-  (var-type (t x)))
+  (Γ ::=
+    (var-type ...))
+  (visited ::=
+    ((cname mname) ...))
+  (var-type ::=
+    (t x)))
 
 (define-judgment-form CBOO-ctx
   #:contract (typed p)
@@ -142,38 +143,38 @@
 (define-judgment-form CBOO-ctx
   #:contract (typed/e (c ...) Γ visited e t)
   #:mode (typed/e I I I I O)
-  [(where (var-type_a ... (x t) var-type_b ...) Γ)
+  [(where (var-type_a ... (t x) var-type_b ...) Γ)
    (side-condition ,(not (member (term x) (term (var-type_a ...)))))
-   --------------------
+   -------------------- e-var
    (typed/e (c ...) Γ visited x t)]
-  [--------------------
+  [-------------------- e-num
    (typed/e (c ...) Γ visited n Number)]
   [(typed/e (c ...) Γ visited e_l Number)
    (typed/e (c ...) Γ visited e_r Number)
-   --------------------
+   -------------------- e-add
    (typed/e (c ...) Γ visited (+ e_l e_r) Number)]  
   [(typed/e (c ...) Γ visited e_l Number)
    (typed/e (c ...) Γ visited e_r Number)
-   --------------------
+   -------------------- e-mul
    (typed/e (c ...) Γ visited (* e_l e_r) Number)]
   [(where (var-type_a ... (this t) var-type_b ...) Γ)
    (side-condition ,(not (member (term this) (term (var-type_a ...)))))
-   --------------------
+   -------------------- e-this
    (typed/e (c ...) Γ visited this t)]
   [(where (var-type ...) Γ)
    (where Γ_2 ((t_let x) ... var-type ...))
    (typed/e (c ...) Γ visited e_let t_let) ...
    (typed/e (c ...) Γ_2 visited e t)
-   --------------------
+   -------------------- e-let
    (typed/e (c ...) Γ visited (let ((t_let x e_let) ...) e) t)]
   [(typed/e (c ...) Γ visited e cname)
    (where (c_1 ... (class cname ((t_field x) ..._n) m ...) c_2 ...) (c ...))
    (where (any_1 ... (t x_field) any_2 ...) ((t_field x) ...))
-   --------------------
+   -------------------- e-get
    (typed/e (c ...) Γ visited (get e x_field) t)]
   [(where (c_1 ... (class cname ((t_field x) ..._n) m ...) c_2 ...) (c ...))
    (typed/e (c ...) Γ visited e t_field) ...
-   --------------------
+   -------------------- e-new
    (typed/e (c ...) Γ visited (new cname e ..._n) cname)]
   [(where ((cname_visited mname_visited) ...) visited)
    (where (c_1 
@@ -190,8 +191,20 @@
    (where (var-type ...) Γ)
    (where Γ_2 ((this cname) (t_param param) ... var-type ...))
    (typed/e (c ...) Γ ((cname mname) (cname_visited mname_visited) ...) e_m t)
-   --------------------
+   -------------------- e-send
    (typed/e (c ...) Γ visited (send e_to mname e_param ..._n) t)])
+
+;; Well-typed programs
+(term (judgment-holds (typed (1))))
+(term (judgment-holds (typed ((+ 1 1)))))
+(term (judgment-holds (typed ((let ((Number x 1)) x)))))
+(term (judgment-holds (typed ((let ((Number x 1)(Number y 1)) (* x y))))))
+(term (judgment-holds (typed ((class C ()) (new C)))))
+(term (judgment-holds (typed ((class C ((Number c))) (new C 3)))))
+
+;; Poorly-typed Programs
+(term (judgment-holds (typed ((class C ()) (+ (new C) 3)))))
+
 
 ;; -----------------------------------------------------------------------------
 
