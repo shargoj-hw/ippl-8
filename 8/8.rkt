@@ -194,16 +194,24 @@
    -------------------- e-send
    (typed/e (c ...) Γ visited (send e_to mname e_param ..._n) t)])
 
+(define-syntax-rule (type-tests p0)
+  (term (judgment-holds (typed p0))))
+
+(define-syntax-rule (does-not-type-test p0)
+  (term (judgment-holds (typed p0))))
+
 ;; Well-typed programs
-(term (judgment-holds (typed (1))))
-(term (judgment-holds (typed ((+ 1 1)))))
-(term (judgment-holds (typed ((let ((Number x 1)) x)))))
-(term (judgment-holds (typed ((let ((Number x 1)(Number y 1)) (* x y))))))
-(term (judgment-holds (typed ((class C ()) (new C)))))
-(term (judgment-holds (typed ((class C ((Number c))) (new C 3)))))
+(type-tests (1))
+(type-tests ((+ 1 1)))
+(type-tests ((let ((Number x 1)) x)))
+(type-tests ((let ((Number x 1) (Number y 1)) (* x y))))
+(type-tests ((class C ()) (new C)))
+(type-tests ((class C ((Number c))) (new C 3)))
+(type-tests ((class A ()) (class B ()) (let ((A a (new A))) a)))
 
 ;; Poorly-typed Programs
-(term (judgment-holds (typed ((class C ()) (+ (new C) 3)))))
+(does-not-type-test ((class C ()) (+ (new C) 3)))
+(does-not-type-test ((class A ()) (class B ()) (let ((A a (new B))) a)))
 
 
 ;; -----------------------------------------------------------------------------
