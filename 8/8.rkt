@@ -106,7 +106,8 @@
   (visited ::=
     ((cname mname) ...))
   (var-type ::=
-    (t x)))
+    (t x)
+    (t this)))
 
 (define-judgment-form CBOO-ctx
   #:contract (typed p)
@@ -136,7 +137,7 @@
   #:contract (typed/method (c ...) cname m)
   #:mode (typed/method I I I)
   [(where (def mname ((t param) ...) e) m)
-   (typed/e (c ...) ((this cname) (t param) ...) ((cname mname)) e t_e)
+   (typed/e (c ...) ((cname this) (t param) ...) ((cname mname)) e t_e)
    --------------------
    (typed/method (c ...) cname m)])
 
@@ -157,8 +158,8 @@
    (typed/e (c ...) Γ visited e_r Number)
    -------------------- e-mul
    (typed/e (c ...) Γ visited (* e_l e_r) Number)]
-  [(where (var-type_a ... (this t) var-type_b ...) Γ)
-   (side-condition ,(not (member (term this) (term (var-type_a ...)))))
+  [(where (var-type_a ... (t this) var-type_b ...) Γ)
+   (side-condition ,(not (member (term (t this)) (term (var-type_a ...)))))
    -------------------- e-this
    (typed/e (c ...) Γ visited this t)]
   [(where (var-type ...) Γ)
@@ -177,7 +178,8 @@
    -------------------- e-new
    (typed/e (c ...) Γ visited (new cname e ..._n) cname)]
   [(where ((cname_visited mname_visited) ...) visited)
-   (where (c_1 
+   (typed/e (c ...) Γ visited e_to cname)
+   (where (c_1
 	   ... 
 	   (class cname (any ...) 
 	     m_1 ... 
@@ -185,34 +187,44 @@
 	     m_2 ...)
 	   c_2 ...)
 	  (c ...))
-   (typed/e (c ...) Γ visited e_to cname)
    (typed/e (c ...) Γ visited e_param t_param) ...
    (side-condition ,(not (member (term (cname mname)) (term visited))))
    (where (var-type ...) Γ)
-   (where Γ_2 ((this cname) (t_param param) ... var-type ...))
-   (typed/e (c ...) Γ ((cname mname) (cname_visited mname_visited) ...) e_m t)
+   (where Γ_2 ((cname this) (t_param param) ... var-type ...))
+   (typed/e (c ...) Γ_2 ((cname mname) (cname_visited mname_visited) ...) e_m t)
    -------------------- e-send
    (typed/e (c ...) Γ visited (send e_to mname e_param ..._n) t)])
 
-(define-syntax-rule (type-tests p0)
-  (term (judgment-holds (typed p0))))
+(module+ test
+  (define-syntax-rule (types p0)
+    (test-equal (term (judgment-holds (typed p0)))
+                (term (judgment-holds #t))))
 
-(define-syntax-rule (does-not-type-test p0)
-  (term (judgment-holds (typed p0))))
+  (define-syntax-rule (~types p0)
+    (test-equal (term (judgment-holds (typed p0)))
+                (term (judgment-holds #f))))
 
-;; Well-typed programs
-(type-tests (1))
-(type-tests ((+ 1 1)))
-(type-tests ((let ((Number x 1)) x)))
-(type-tests ((let ((Number x 1) (Number y 1)) (* x y))))
-(type-tests ((class C ()) (new C)))
-(type-tests ((class C ((Number c))) (new C 3)))
-(type-tests ((class A ()) (class B ()) (let ((A a (new A))) a)))
+  ;; Well-typed programs
+  (types (1))
+  (types ((+ 1 1)))
+  (types ((let ((Number x 1)) x)))
+  (types ((let ((Number x 1) (Number y 1)) (* x y))))
+  (types ((class C ()) (new C)))
+  (types ((class C ((Number c))) (new C 3)))
+  (types ((class A ()) (class B ()) (let ((A a (new A))) a)))
+  (types ((class C () (def m ((Number n)) (* n n))) 
+          (let ((C c (new C))) (send c m 9))))
+  (types ((class C () (def m () (send this n)) (def n () 5)) 0))
 
-;; Poorly-typed Programs
-(does-not-type-test ((class C ()) (+ (new C) 3)))
-(does-not-type-test ((class A ()) (class B ()) (let ((A a (new B))) a)))
-
+  ;; Poorly-typed Programs
+  (~types ((class C ()) (+ (new C) 3)))
+  (~types ((class A ()) (class B ()) (let ((A a (new B))) a)))
+  (~types ((class A ()) (class B () (def b () (+ 3 (new A)))) 0))
+  (~types ((class C ()) (+ (new C) 3)))
+  (~types ((class C () (def m ((Number n)) (* n n))) 
+           (let ((C c (new C)))
+             (send c m (new C)))))
+  (~types ((class C () (def m () (send this m))) 0)))
 
 ;; -----------------------------------------------------------------------------
 
