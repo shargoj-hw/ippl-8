@@ -224,7 +224,42 @@
   (~types ((class C () (def m ((Number n)) (* n n))) 
            (let ((C c (new C)))
              (send c m (new C)))))
-  (~types ((class C () (def m () (send this m))) 0)))
+  (~types ((class C () (def m () (send this m))) 0))
+  (~types (this))
+  (~types ((class C () (def m () (send (new B) m this)))
+           (class B () (def m ((C c)) (send (new A) m c)))
+           (class A () (def m ((C c)) (send c m)))
+           0))
+  (~types ((class C () (def m () (send (new B) m (new C))))
+           (class B () (def m ((C c)) (send (new A) m c)))
+           (class A () (def m ((C c)) (send c m)))
+           0)))
+
+(define-metafunction CBOO
+  typed-evaluate : p -> any or "type error"
+  [(typed-evaluate p) (evaluate p)
+   (side-condition (judgment-holds (typed p)))]
+  [(typed-evaluate p) "type error"])
+
+(module+ test
+  (test-equal (term (typed-evaluate ,bad1)) "type error")
+  (test-equal (term (typed-evaluate ,bad2)) "type error")
+  (test-equal (term (typed-evaluate ,bad3)) "type error")
+  (test-equal (term (typed-evaluate ,bad4)) "type error")
+  (test-equal (term (typed-evaluate ,bad5)) "type error")
+  (test-equal (term (typed-evaluate ,bad-big)) "type error")
+
+  (define-syntax-rule 
+    (runs-well/typed p0 v)
+    (test-equal (e-=α (term (typed-evaluate ,p0)) v) #t))
+
+  (runs-well/typed ((let ((Number x 1)) x)) 1)
+  (runs-well/typed ((let ((Number x 1) (Number y 1)) (* x y))) 1)
+  (runs-well/typed ((class C ()) (new C)) (new C))
+  (runs-well/typed ((class C ((Number c))) (new C 3))
+                   (let ((Object x (new C 3))) x))
+  (runs-well/typed ((class A ()) (class B ()) (let ((A a (new A))) a))
+                   (let ((Object l (new A))) l)))
 
 ;; -----------------------------------------------------------------------------
 
