@@ -109,6 +109,16 @@
     (t x)
     (t this)))
 
+(define-metafunction CBOO
+  no-duplicates : (x ...) -> boolean
+  [(no-duplicates (x_1 ... x x_2 ... x x_3 ...)) #f]
+  [(no-duplicates (x ...)) #t])
+
+(module+ test
+  (test-equal (term (no-duplicates ())) #t)
+  (test-equal (term (no-duplicates (a b c d e f))) #t)
+  (test-equal (term (no-duplicates (a b c d e c k))) #f))
+
 (define-judgment-form CBOO-ctx
   #:contract (typed p)
   #:mode (typed I)
@@ -122,6 +132,8 @@
   #:contract (typed/classes (c ...))
   #:mode (typed/classes I)
   [(typed/class (c ...) c) ...
+   (where ((class cname (any ...) m ...) ...) (c ...))
+   (side-condition (no-duplicates (cname ...)))
    --------------------
    (typed/classes (c ...))])
 
@@ -130,6 +142,9 @@
   #:mode (typed/class I I)
   [(where (class cname ((t field) ...) m ...) c_active)
    (typed/method (c ...) cname m) ...
+   (side-condition (no-duplicates (field ...)))
+   (where ((def mname (any ...) e) ...) (m ...))
+   (side-condition (no-duplicates (mname ...)))
    --------------------
    (typed/class (c ...) c_active)])
 
@@ -138,6 +153,7 @@
   #:mode (typed/method I I I)
   [(where (def mname ((t param) ...) e) m)
    (typed/e (c ...) ((cname this) (t param) ...) ((cname mname)) e t_e)
+   (side-condition (no-duplicates (param ...)))
    --------------------
    (typed/method (c ...) cname m)])
 
@@ -166,6 +182,7 @@
    (where Γ_2 ((t_let x) ... var-type ...))
    (typed/e (c ...) Γ visited e_let t_let) ...
    (typed/e (c ...) Γ_2 visited e t)
+   (side-condition (no-duplicates (x ...)))
    -------------------- e-let
    (typed/e (c ...) Γ visited (let ((t_let x e_let) ...) e) t)]
   [(typed/e (c ...) Γ visited e cname)
@@ -233,7 +250,12 @@
   (~types ((class C () (def m () (send (new B) m (new C))))
            (class B () (def m ((C c)) (send (new A) m c)))
            (class A () (def m ((C c)) (send c m)))
-           0)))
+           0))
+  (~types ((class C ()) (class C ()) 0))
+  (~types ((class C () (def m () 0) (def m () 3)) 0))
+  (~types ((class C ((Number f) (Number f))) 0))
+  (~types ((class C () (def m ((Number f) (Number f)) 0)) 0))
+  (~types ((let ((Number a 0) (Number a 0)) 0))))
 
 (define-metafunction CBOO
   typed-evaluate : p -> any or "type error"
@@ -253,25 +275,22 @@
     (runs-well/typed p0 v)
     (test-equal (e-=α (term (typed-evaluate ,p0)) v) #t))
 
-  (runs-well/typed ((let ((Number x 1)) x)) 1)
-  (runs-well/typed ((let ((Number x 1) (Number y 1)) (* x y))) 1)
-  (runs-well/typed ((class C ()) (new C)) (new C))
-  (runs-well/typed ((class C ((Number c))) (new C 3))
-                   (let ((Object x (new C 3))) x))
-  (runs-well/typed ((class A ()) (class B ()) (let ((A a (new A))) a))
-                   (let ((Object l (new A))) l)))
+  (runs-well/typed p0 60000)
+  (runs-well/typed p1 60000)
+  (runs-well/typed p2 (term (let ((Object l (new main 1))) l)))
+  (runs-well/typed bug1 3))
 
 ;; -----------------------------------------------------------------------------
 
 (define p0
   (term
    (;; class definitions: 
-    (class rectangle ((Object width) (Object height))
+    (class rectangle ((Number width) (Number height))
       (def w() (get this width))
       (def h() (get this height))
       (def area() 
-	   (let ((Object w (send this w))
-		 (Object h (get this height)))
+	   (let ((Number w (send this w))
+		 (Number h (get this height)))
 	     (* w h)))) 
     (class start-here ()
       (def main()
@@ -282,12 +301,12 @@
 (define p1
   (term
    (;; class definitions: 
-    (class rectangle ((Object width) (Object height))
+    (class rectangle ((Number width) (Number height))
       (def w() (get this width))
       (def h() (get this height))
       (def area() 
-        (let ((Object w (send this w))
-              (Object h (get this height)))
+        (let ((Number w (send this w))
+              (Number h (get this height)))
           (* w h)))) 
     (class start-here ()
       (def main()
@@ -297,17 +316,17 @@
 
 (define p2
   (term 
-   ((class main ((Object inits))
-      (def main ((Object argv))
+   ((class main ((Number inits))
+      (def main ((Number argv))
         this))
     (send (new main 1) main 2))))
 
 (define bug1
   (term 
-   ((class bug ((Object a)))
+   ((class bug ((Number a)))
     (let ()
-      (let ((Object x (new bug 1))
-            (Object y (new bug 2)))
+      (let ((bug x (new bug 1))
+            (bug y (new bug 2)))
         (+ (get x a) (get y a)))))))
 
 (module+ test
